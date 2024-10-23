@@ -61,6 +61,7 @@ void setting_signals() {
 		throw std::system_error(errno, std::system_category(), "sigaction() for `sigint` failed, can't setting signal");
     }
 
+	// if we cancel send() with large data, this would make send() immediately, otherwise the whole program would terminated.
 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
 		throw std::system_error(errno, std::system_category(), "ignore `SIGPIPE` failed, can't setting signal");
 	}
@@ -80,7 +81,7 @@ int try_parse_port(const char* param) {
         ++param;
     }
 
-    if (result > 65535) {
+    if (result > 65535) {   // port should between: 0 ~ 65535
         return -1;
     }
 
@@ -198,7 +199,7 @@ std::string file_size_to_str(float fileSize) {
 	int level = 0;
 
 	while (true) {
-		if (fileSize / 1024.0 < 0.01f || level == 4) {
+		if (fileSize / 1024.0 < 0.01f || level == 4) {   // float compare to 0 should be careful.
 			break;
 		}
 		else {
@@ -430,7 +431,7 @@ struct Response {
 /*
     Thread pool.
     This thread pool ignores the return value, so you have to push some functions like: void my_func(void);
-    Drawing inspiration from Jakob Progsch and yhirose's thread pool implementation.
+    Drawing inspiration from Jakob Progschj and yhirose's thread pool implementation.
 */
 class ThreadPool {
     std::queue<std::function<void()>> taskQueue;
