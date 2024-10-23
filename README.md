@@ -9,3 +9,4 @@
 ###### this server is used to seek my raspberrypi device's file lists though web browser.
 ##### other things
 ###### this program uses multi-thread mode with a simple thread-pool, uses state machine to parse the http request, and deal with some signals. the file transport is based on transfer-encoding: chunked.
+![image](https://github.com/user-attachments/assets/59af40c7-d516-4783-92de-ca57da2b83a7)
