@@ -38,8 +38,8 @@ constexpr const char* DEFAULT_HTML_HEADER = "<!DOCTYPE HTML PUBLIC -//W3C//DTD H
 				                            "<html>\n<head>\n"
 				                            "<meta http-equiv=\"Content-Type\"\n"
 				                            "content=\"text/html; charset=UTF-8\">\n"
-				                            "<title>Http File Server</title>\n</head>\n"
-				                            "<body>\n<h1>Web Server</h1>\n"
+				                            "<title>File Server</title>\n</head>\n"
+				                            "<body>\n<h1>File Server</h1>\n"
 				                            "<hr>\n<ul>\n";
 
 constexpr const char* DEFAULT_HTML_END = "</ul>\n<hr>\n</body>\n</html>\n";
