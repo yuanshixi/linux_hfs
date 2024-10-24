@@ -862,7 +862,7 @@ public:
         }
     }
 
-    void serve(const std::string& ip, uint16_t port, const char* rootPath) noexcept {
+    void serve(const std::string& ip, uint16_t port, const char* rootPath) {
         bind_ip_port(ip, port);
 
 		while (running) {
