@@ -21,28 +21,37 @@
 
 // linux headers.
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
 #include <dirent.h>
+#include <ifaddrs.h>
 
 constexpr uint32_t MAX_HTTP_REQUEST_LENGTH = 2048;
 constexpr uint32_t MAX_HTTP_METHOD_LENGTH = 32;
 constexpr uint32_t MAX_HTTP_URL_LENGTH = 1024;
 constexpr uint32_t MAX_HTTP_VERSION_LENGTH = 32;
+constexpr uint32_t MAX_HTTP_HEADERS_NUM = 32;
 
-constexpr const char* DEFAULT_HTML_HEADER = "<!DOCTYPE HTML PUBLIC -//W3C//DTD HTML 4.01//EN\n"
-				                            "http://www.w3.org/TR/html4/strict.dtd>\n"
-				                            "<html>\n<head>\n"
-				                            "<meta http-equiv=\"Content-Type\"\n"
-				                            "content=\"text/html; charset=UTF-8\">\n"
-				                            "<title>File Server</title>\n</head>\n"
-				                            "<body>\n<h1>File Server</h1>\n"
-				                            "<hr>\n<ul>\n";
+std::string DEFAULT_HTML_HEADER = "<!DOCTYPE HTML PUBLIC -//W3C//DTD HTML 4.01//EN"
+				                    "http://www.w3.org/TR/html4/strict.dtd>"
+				                    "<html><head>"
+				                    R"(<meta http-equiv="Content-Type")"
+				                    R"(content="text/html; charset=UTF-8">)"
+				                    "<title>File Server</title></head>"
+				                    "<body><h1>File Server</h1>"
+                                    R"(<form id="uploadForm" action="http://)"
+                                    "#ip_port"
+                                    R"(/upload_files" method="POST" enctype="multipart/form-data">)"
+                                    R"(<input type="file" id="fileInput" name="fileInput" />)"
+                                    R"(<button type="submit">Upload</button>)"
+                                    "</form>"
+				                    "<hr><ul>";
 
-constexpr const char* DEFAULT_HTML_END = "</ul>\n<hr>\n</body>\n</html>\n";
+constexpr const char* DEFAULT_HTML_END = "</ul><hr></body></html>";
 
 volatile sig_atomic_t running = 1;
 std::mutex output_mut;   // avoid output confusion.
@@ -231,171 +240,6 @@ struct Request {
     std::string url;
     std::string version;
     std::map<std::string, std::string> headers;
-    std::string body;
-};
-
-class RequestParser {
-    enum State {
-        method,
-        url,
-        version,
-        headers,
-        body
-    };
-
-    void headers_split(Request& request, const std::string& headers) {
-        size_t i = 0;
-        auto lines = string_split(headers, "\r\n");
-
-        for (const std::string& line : lines) {
-            size_t pos = line.find(": ");
-            request.headers.emplace(line.substr(0, pos), line.substr(pos + 2));
-        }
-    }
-
-    bool decode_percent_encoding_url(Request& req) {
-        std::string temp;
-
-        for (size_t i = 0; i < req.url.length(); ) {
-            if (req.url[i] == '%') {
-                if (i + 2 >= req.url.length()) {
-                    return false;
-                }
-
-                int p1 = hex_to_decimal(req.url[i + 1]);
-                int p2 = hex_to_decimal(req.url[i + 2]);
-
-                if (p1 >= 0 && p2 >= 0) {
-                    temp += static_cast<char>(16 * p1 + p2);
-                    i += 3;
-                }
-                else {
-                    return false;
-                }
-            }
-            else {
-                temp += req.url[i];
-                ++i;
-            }
-        }
-
-        req.url = temp;
-        return true;
-    }
-public:
-    enum err {
-        success,
-        method_too_long,
-        url_too_long,
-        version_too_long,
-        invalid_crlf,
-        invalid_url
-    };
-
-    RequestParser() = default;
-
-    err parse(Request& request, const char* str, int len) noexcept {
-        std::string headers;
-        State state = State::method;
-
-        while (len > 0) {
-            switch(state) {
-                case State::method:
-                    if (*str == ' ') {
-                        state = State::url;
-                    }
-                    else {
-                        if (request.method.length() > MAX_HTTP_METHOD_LENGTH) {
-                            return err::method_too_long;
-                        }
-                        else {
-                            request.method += *str;
-                        }
-                    }
-
-                    ++str;
-                    len -= 1;
-                    break;
-                case State::url:
-                    if (*str == ' ') {
-                        state = State::version;
-                    }
-                    else {
-                        if (request.url.length() > MAX_HTTP_URL_LENGTH) {
-                            return err::url_too_long;
-                        }
-                        else {
-                            request.url += *str;
-                        }
-                    }
-
-                    ++str;
-                    len -= 1;
-                    break;
-                case State::version:
-                    if (*str == '\r') {
-                        if (str[1] != '\n') {
-                            return err::invalid_crlf;
-                        }
-                        else {
-                            state = State::headers;
-                            str += 2;
-                            len -= 2;
-                        }
-                    }
-                    else {
-                        if (request.version.length() > MAX_HTTP_VERSION_LENGTH) {
-                            return err::version_too_long;
-                        }
-                        else {
-                            request.version += *str;
-                            ++str;
-                            len -= 1;
-                        }
-                    }
-
-                    break;
-                case State::headers:
-                    if (*str == '\r') {
-                        if (str[1] != '\n') {
-                            return err::invalid_crlf;
-                        }
-
-                        if (str[2] == '\r' && str[3] == '\n') {
-                            state = State::body;
-                            str += 4;
-                            len -= 4;
-                        }
-                        else {
-                            headers += "\r\n";
-                            str += 2;
-                            len -= 2;
-                        }
-                    }
-                    else {
-                        headers += *str;
-                        ++str;
-                        len -= 1;
-                    }
-
-                    break;
-                case State::body:
-                    request.body += *str;
-                    ++str;
-                    len -= 1;
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        if (!decode_percent_encoding_url(request)) {
-            return err::invalid_url;
-        }
-
-        headers_split(request, headers);
-        return err::success;
-    }
 };
 
 struct Response {
@@ -552,6 +396,36 @@ class Connection {
         info += ip;
         info += ":";
         info += std::to_string(ntohs(addr.sin_port));
+    }
+
+    bool decode_percent_encoding_url(Request& req) {
+        std::string temp;
+
+        for (size_t i = 0; i < req.url.length(); ) {
+            if (req.url[i] == '%') {
+                if (i + 2 >= req.url.length()) {
+                    return false;
+                }
+
+                int p1 = hex_to_decimal(req.url[i + 1]);
+                int p2 = hex_to_decimal(req.url[i + 2]);
+
+                if (p1 >= 0 && p2 >= 0) {
+                    temp += static_cast<char>(16 * p1 + p2);
+                    i += 3;
+                }
+                else {
+                    return false;
+                }
+            }
+            else {
+                temp += req.url[i];
+                ++i;
+            }
+        }
+
+        req.url = temp;
+        return true;
     }
 
 	void setting_recv_timeout() {
@@ -732,43 +606,200 @@ class Connection {
         }
     }
 
-    void handle_send(const char* str, int len) {
-        Request request;
-        RequestParser parser;
-        std::string responseStr;
-        
-        auto ret = parser.parse(request, str, len);
-        switch(ret) {
-            case RequestParser::success:
-                print_brief_request(request);
+    std::string parse_boundary(const Request& req) {
+        const std::string pattern = "boundary=";
+        const std::string& value = req.headers.at("Content-Type");
+        return value.substr(value.find(pattern) + pattern.length());
+    }
 
-				if (compare_string_ignore_case(request.method, "GET")) {
-					handle_files(request);
-				}
-				else {
-					responseStr = build_response_template(405, "Method Not Allowed");
-                	do_send(responseStr);
-				}
-                
+    void try_parse_filename(std::string&& str, std::string& fileName) {
+        const std::string pattern = "filename=\"";
+        size_t pos = str.find(pattern);
+
+        if (pos != std::string::npos) {
+            pos += pattern.length();
+
+            while (str[pos] != '"') {
+                fileName += str[pos];
+                ++pos;
+            }
+        }
+    }
+
+    void handle_upload(const Request& req) {
+        uint64_t length = std::stoll(req.headers.at("Content-Length"));
+        std::string boundary = parse_boundary(req);
+        std::string responseStr;
+        std::string fileName;
+        int n;
+
+        // first, parse --boundary
+        std::array<char, 8192> buf;
+        while (true) {
+            n = read_line(buf);
+            length -= (n + 2);
+
+            if (fileName.length() == 0) {
+                try_parse_filename(std::string(buf.data(), n), fileName);
+            }
+
+            if (n == 0) {
                 break;
-            case RequestParser::method_too_long:
-                responseStr = build_response_template(405, "Method Not Allowed");
-                do_send(responseStr);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock{ output_mut };
+            std::cout << "save file `" << fileName << "`\n";
+        }
+
+        std::ofstream out{ fileName, std::ios::binary };
+
+        // after file data, there is a \r\n, and a --boundary--\r\n
+        while (length > boundary.length() + 8) {
+            n = ::recv(fd, buf.data(), length - boundary.length() - 8, 0);
+            length -= n;
+
+            out.write(buf.data(), n);
+        }
+
+        out.close();
+
+        read_line(buf);
+        read_line(buf);
+        responseStr = build_response_template(200, "OK");
+        do_send(responseStr);
+    }
+
+    template<size_t N>
+    int read_line(std::array<char, N>& buf) {
+        int numOfRecvBytes = 0;
+        int n;
+        char c;
+
+        while (numOfRecvBytes < N) {
+            n = ::recv(fd, &c, 1, 0);
+
+            if (n <= 0) {
+                return -1;
+            }
+            else {
+                if (c == '\r') {
+                    n = ::recv(fd, &c, 1, MSG_PEEK);
+                    
+                    if (n <= 0) {
+                        return -1;
+                    }
+                    else {
+                        if (c == '\n') {
+                            ::recv(fd, &c, 1, 0);
+                            break;
+                        }
+                        else {
+                            return -1;
+                        }
+                    }
+                }
+                else {
+                    buf[numOfRecvBytes] = c;
+                    numOfRecvBytes += 1;
+                }
+            }
+        }
+
+        return c == '\n' ? numOfRecvBytes : -1;
+    }
+
+    template<size_t N>
+    void parse_method_url_version(const std::array<char, N>& buf, int length, Request& req) {
+        int i = 0;
+
+        while (buf[i] != ' ') {
+            req.method += buf[i];
+            ++i;
+        }
+
+        ++i;
+        while (buf[i] != ' ') {
+            req.url += buf[i];
+            ++i;
+        }
+
+        ++i;
+        while (i < length) {
+            req.version += buf[i];
+            ++i;
+        }
+    }
+
+    template<size_t N>
+    void save_one_http_header(const std::array<char, N>& buf, int length, Request& req) {
+        std::string key;
+        std::string value;
+        int i = 0;
+
+        while (buf[i] != ':') {
+            key += buf[i];
+            ++i;
+        }
+
+        i += 2;
+        while (i < length) {
+            value += buf[i];
+            ++i;
+        }
+
+        req.headers.emplace(std::move(key), std::move(value));
+    }
+
+    void handle_recv() {
+        std::array<char, MAX_HTTP_REQUEST_LENGTH> buf;
+        std::string responseStr;
+        Request req;
+        int n;
+
+        n = read_line(buf);
+        if (n < 0) {
+            return;
+        }
+
+        parse_method_url_version(buf, n, req);
+        if (!decode_percent_encoding_url(req)) {
+            responseStr = build_response_template(400, "Bad Request");
+            do_send(responseStr);
+            return;
+        }
+
+        print_brief_request(req);
+
+        while (true) {
+            n = read_line(buf);
+
+            if (n < 0) {
+                return;
+            }
+            else if (n == 0) {
                 break;
-            case RequestParser::url_too_long:
-                responseStr = build_response_template(414, "Request-URI Too Long");
-                do_send(responseStr);
-                break;
-            case RequestParser::version_too_long:
-                responseStr = build_response_template(505, "HTTP Version Not Supported");
-                do_send(responseStr);
-                break;
-            case RequestParser::invalid_crlf:
-            case RequestParser::invalid_url:
-            default:
+            }
+
+            if (req.headers.size() == MAX_HTTP_HEADERS_NUM) {
                 responseStr = build_response_template(400, "Bad Request");
                 do_send(responseStr);
-                break;
+                return;
+            }
+
+            save_one_http_header(buf, n, req);
+        }
+
+        if (compare_string_ignore_case(req.method, "GET")) {
+            handle_files(req);
+        }
+        else if (compare_string_ignore_case(req.method, "POST")) {
+            handle_upload(req);
+        }
+        else {
+            responseStr = build_response_template(405, "Method Not Allowed");
+            do_send(responseStr);
         }
     }
 public:
@@ -785,24 +816,12 @@ public:
     }
 
     void handle() noexcept {
-        char buf[MAX_HTTP_REQUEST_LENGTH];
-
-		try {
-        	init_connection_info();
-			setting_recv_timeout();
-
-			int len = recv(fd, buf, MAX_HTTP_REQUEST_LENGTH, 0);
-			if (len == 0) {
-				throw std::runtime_error("socket has been closed, recv() failed for " + info);
-			}
-			else if (len < 0) {
-				throw std::system_error(errno, std::system_category(), "recv() failed for " + info);
-			}
-			else {
-				handle_send(buf, len);
-			}
-		}
-		catch(const std::exception& e) {
+        try {
+            init_connection_info();
+            setting_recv_timeout();
+            handle_recv();
+        }
+        catch(const std::exception& e) {
 			std::lock_guard<std::mutex> lock{ output_mut };
 			std::cerr << e.what() << "\n";
 		}
@@ -813,7 +832,7 @@ class HttpFileServer {
     int fd;
     ThreadPool pool;
 
-    void bind_ip_port(const std::string& ip, uint16_t port) {
+    void bind_ip_port(const std::string& ip, uint16_t& port) {
         struct sockaddr_in addr;
 
         addr.sin_family = AF_INET;
@@ -848,6 +867,48 @@ class HttpFileServer {
 
         std::cout << "server listen on " << port << "\n";
     }
+
+    // see https://stackoverflow.com/questions/212528/how-can-i-get-the-ip-address-of-a-linux-machine
+    std::string get_local_ip() {
+        struct ifaddrs* ifaddr;
+        struct ifaddrs* cursor;
+        char ip[INET6_ADDRSTRLEN];
+
+        if (getifaddrs(&ifaddr) != 0) {
+            throw std::system_error(errno, std::system_category(), "getifaddrs() failed");
+        }
+
+        for (cursor = ifaddr; cursor != nullptr; cursor = cursor->ifa_next) {
+            if (cursor->ifa_addr->sa_family == AF_INET) {   // ignore ipv6.
+                struct sockaddr_in* sockaddr = (struct sockaddr_in*)(cursor->ifa_addr);
+
+                if (inet_ntop(AF_INET, &(sockaddr->sin_addr), ip, INET6_ADDRSTRLEN) == nullptr) {
+                    freeifaddrs(ifaddr);
+                    throw std::system_error(errno, std::system_category(), "inet_ntop() failed");
+                }
+
+                // ignore the 127.0.0.1 or 172.xxx.xxx.xxx
+                if (strstr(ip, "127") == nullptr && strstr(ip, "172") == nullptr) {
+                    break;
+                }
+            }
+        }
+        
+        freeifaddrs(ifaddr);
+        return std::string{ ip };
+    }
+
+    void modify_html_header(uint16_t port) {
+        const std::string pattern = "#ip_port";
+        std::string ip_port = get_local_ip() + ":" + std::to_string(port);
+
+        auto pos = DEFAULT_HTML_HEADER.find(pattern);
+        if (pos == std::string::npos) {
+            throw std::runtime_error("invalid html header, lose `#ip_port`");
+        }
+
+        DEFAULT_HTML_HEADER.replace(pos, pattern.length(), ip_port);
+    }
 public:
     HttpFileServer() : fd{ -1 } {
 		fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -863,7 +924,8 @@ public:
     }
 
     void serve(const std::string& ip, uint16_t port, const char* rootPath) {
-        bind_ip_port(ip, port);
+        bind_ip_port(ip, port);   // port will be modified.
+        modify_html_header(port);
 
 		while (running) {
 			int client = ::accept(fd, nullptr, nullptr);
