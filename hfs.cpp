@@ -637,6 +637,10 @@ class Connection {
         std::array<char, 8192> buf;
         while (true) {
             n = read_line(buf);
+            if (n < 0) {
+                return;
+            }
+
             length -= (n + 2);
 
             if (fileName.length() == 0) {
@@ -658,6 +662,10 @@ class Connection {
         // after file data, there is a \r\n, and a --boundary--\r\n
         while (length > boundary.length() + 8) {
             n = ::recv(fd, buf.data(), length - boundary.length() - 8, 0);
+            if (n < 0) {
+                return;
+            }
+
             length -= n;
 
             out.write(buf.data(), n);
