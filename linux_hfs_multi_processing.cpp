@@ -238,7 +238,7 @@ struct Connection {
 		timeout.tv_usec = usec;
 
 		if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-			throw std::system_error(errno, std::system_category(), "setsockopt() failed on `SO_RCVTIMEO` for " + ip_port);
+			throw std::system_error(errno, std::system_category(), ip_port + ", setsockopt() failed on `SO_RCVTIMEO`");
 		}
     }
 
@@ -250,10 +250,10 @@ struct Connection {
         ssize_t recvLen = ::recv(fd, buf, len, flags);
 
         if (recvLen < 0) {
-            throw std::system_error(errno, std::system_category(), "recv() failed for " + ip_port);
+            throw std::system_error(errno, std::system_category(), ip_port + ", recv() failed");
         }
         else if (recvLen == 0) {
-            throw std::runtime_error{ "connection has been closed for " + ip_port };
+            throw std::runtime_error{ ip_port + ", connection has been closed" };
         }
 
         return recvLen;
@@ -272,7 +272,7 @@ struct Connection {
             sent = ::send(fd, buf + sent, len - sent, flags);
 
             if (sent < 0) {
-                throw std::system_error(errno, std::system_category(), "send() failed for " + ip_port);
+                throw std::system_error(errno, std::system_category(), ip_port + ", send() failed");
             }
 
             len -= sent;
@@ -960,16 +960,16 @@ void handle_http_request(Connection& conn, const std::string& rootPath) {
 
     if (!parse_request(conn, req, buf)) {
         send_response_template(conn, "400", "Bad Request");
-        std::cerr << conn.ip_port <<  " -- can't parse http request.\n";
+        std::cerr << conn.ip_port <<  ", can't parse http request.\n";
         return;
     }
 
     if (string_compare_ignore_case(req.method, "GET")) {
-        std::cout << conn.ip_port << " GET - " << req.url << "\n";
+        std::cout << conn.ip_port << ", GET - " << req.url << "\n";
         handle_files_page(conn, req, rootPath);
     }
     else if (string_compare_ignore_case(req.method, "POST")) {
-        std::cout << conn.ip_port << " POST - " << req.url << "\n";
+        std::cout << conn.ip_port << ", POST - " << req.url << "\n";
         handle_upload(conn, req, rootPath);
     }
     else {
@@ -982,7 +982,7 @@ void handle_connection(int fd, const std::string& rootPath) {
         Connection conn{ fd };
         conn.set_recv_timeout(5, 0);
 
-        std::cout << "connected: " << conn.ip_port << "\n";
+        std::cout << conn.ip_port << ", connected\n";
         handle_http_request(conn, rootPath);
     }
     catch(const std::system_error& se) {
