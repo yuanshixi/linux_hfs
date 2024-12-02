@@ -1,3 +1,9 @@
+/*
+    @author yuanluo2
+    @brief A http file server written in C++11, no 3rd-parties, just using linux raw socket.
+           supports file list, file uploading, chunked data transfer.
+           only for linux platform.
+*/
 #include <iostream>
 #include <fstream>
 #include <array>
