@@ -1,0 +1,16 @@
+.bmp  image/bmp
+.c    text/plain
+.cpp  text/plain
+.gif  image/gif
+.htm  text/html
+.html text/html
+.ico  image/x-icon
+.jpeg image/jpeg
+.jpg  image/jpeg
+.js   application/javascript
+.log  text/plain
+.pdf  application/pdf
+.pic  image/pict
+.png  image/png
+.py   text/plain
+.txt  text/plain
