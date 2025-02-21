@@ -1,16 +1,16 @@
 # linux_hfs
-##### 2024-12-02
-##### now I add a new file, based on multi-processing model.
-#####
-##### brief
-###### a http file server runs on linux. written in C++11 with linux raw socket.
-##### compile with
-###### g++ hfs.cpp -std=c++11 -l pthread -O3 -o hfs
-##### usage
-###### ./hfs 8039 /home/my_dir
-##### why I write this
-###### this server is used to seek my raspberrypi device's file lists though web browser.
-##### other things
-###### this program uses multi-thread mode with a simple thread-pool, uses the tinyhttpd way to parse the http request, and deal with some signals. the file transport is based on transfer-encoding: chunked. this server supports multipart/form-data to upload your own file.
+##### a http file server, supports chunked file transfer, file uploading and file list, works only for linux platform. This project provides both C and C++ version. No 3rd-parties, just raw socket.
+##### you can modify the mime.txt yourself to supports more mime types.
+##### compile command:
+```shell
+cd linux_hfs
+
+mkdir build
+cd build
+
+cmake ..
+make
+
+```
 ![image](https://github.com/user-attachments/assets/bb6a48df-d67b-48a4-9bf6-d58827d44891)
 
